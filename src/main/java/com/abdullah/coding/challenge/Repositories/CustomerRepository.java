@@ -4,8 +4,10 @@ import com.abdullah.coding.challenge.entities.Customer;
 import org.springframework.data.repository.CrudRepository;
 import org.springframework.stereotype.Repository;
 
+import java.util.Optional;
+
 @Repository
 public interface CustomerRepository extends CrudRepository<Customer, Integer> {
-    Customer findById(String id);
+    Optional<Customer> findById(Integer id);
 
 }

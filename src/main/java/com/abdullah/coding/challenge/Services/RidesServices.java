@@ -1,15 +1,10 @@
 package com.abdullah.coding.challenge.Services;
 
-import com.abdullah.coding.challenge.Repositories.BookingRepository;
-import com.abdullah.coding.challenge.Repositories.CabRepository;
-import com.abdullah.coding.challenge.Repositories.CustomerRepository;
-import com.abdullah.coding.challenge.Repositories.RatingRepository;
-import com.abdullah.coding.challenge.entities.Booking;
-import com.abdullah.coding.challenge.entities.Cab;
-import com.abdullah.coding.challenge.entities.Customer;
-import com.abdullah.coding.challenge.entities.Rating;
+import com.abdullah.coding.challenge.Repositories.*;
+import com.abdullah.coding.challenge.entities.*;
 import com.abdullah.coding.challenge.enums.BookingStatus;
 import com.abdullah.coding.challenge.enums.CustomerStatus;
+import com.abdullah.coding.challenge.enums.UserStatus;
 import com.abdullah.coding.challenge.enums.VehicleType;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -35,6 +30,9 @@ public class RidesServices {
 
     @Autowired
     private CustomerRepository customerRepository;
+
+    @Autowired
+    private CancellationRepository cancelRepository;
 
     public Booking addBooking(Booking booking) {
         UUID uuid = UUID.randomUUID();
@@ -95,17 +93,40 @@ public class RidesServices {
         }
     }
 
-    public Booking cancelBooking(Booking booking) {
-        Optional<Booking> ride = Optional.ofNullable(bookingRepository.findByBookingCode(booking.getBookingCode()));
-
-        booking.setStatus(String.valueOf(BookingStatus.CANCELLED));
-
-        if (ride.isPresent()) {
-            bookingRepository.save(booking);
-        }
-        return booking;
+    public List<Booking> findBookings(String customerName, String vehicleType, LocalDateTime requestTime) {
+        return bookingRepository.findBookings(customerName, vehicleType, requestTime);
     }
 
+    public Booking cancelBooking(Cancellation canceled) {
+        Optional<Booking> optionalBooking = Optional.ofNullable(bookingRepository.findByBookingCode(canceled.getBookingCode()));
+
+        if (!optionalBooking.isPresent()) {
+            return null;
+        }
+
+        Booking booking = optionalBooking.get();
+
+        if (booking.getStatus().equals(BookingStatus.CANCELLED.name()) || booking.getStatus().equals(BookingStatus.COMPLETED.name())) {
+            throw new IllegalStateException("Booking is already cancelled or completed.");
+        }
+
+        booking.setStatus(BookingStatus.CANCELLED.name());
+        Booking updatedBooking = bookingRepository.save(booking);
+
+        Optional<Customer> optionalCustomer = customerRepository.findById(booking.getCustomer().getId());
+        Cancellation cancellationLog = new Cancellation();
+        if (optionalCustomer.isPresent()) {
+            cancellationLog.setCancelledBy(UserStatus.USER.name());
+        } else {
+            cancellationLog.setCancelledBy(UserStatus.ADMIN.name());
+        }
+        cancellationLog.setBooking(booking);
+        cancellationLog.setReason(canceled.getReason());
+        cancellationLog.setCancellationTime(Timestamp.valueOf(LocalDateTime.now()));
+        cancelRepository.save(cancellationLog);
+
+        return updatedBooking;
+    }
 
     public List<Booking> seeFutureRides(Integer customerId) {
         LocalDateTime timestamp = LocalDateTime.now();
@@ -141,12 +162,9 @@ public class RidesServices {
         return savedRec;
     }
 
-
     public double calculateAverageRating(Integer cabId) {
         List<Integer> ratings = ratingRepository.findRatingsByCabId(cabId);
         OptionalDouble average = ratings.stream().mapToInt(r -> r).average();
         return average.isPresent() ? average.getAsDouble() : 0.0;
     }
-
-
 }
