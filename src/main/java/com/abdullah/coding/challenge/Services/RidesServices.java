@@ -1,16 +1,25 @@
 package com.abdullah.coding.challenge.Services;
 
 import com.abdullah.coding.challenge.Repositories.BookingRepository;
+import com.abdullah.coding.challenge.Repositories.CabRepository;
+import com.abdullah.coding.challenge.Repositories.CustomerRepository;
 import com.abdullah.coding.challenge.Repositories.RatingRepository;
 import com.abdullah.coding.challenge.entities.Booking;
 import com.abdullah.coding.challenge.entities.Cab;
+import com.abdullah.coding.challenge.entities.Customer;
 import com.abdullah.coding.challenge.entities.Rating;
+import com.abdullah.coding.challenge.enums.BookingStatus;
+import com.abdullah.coding.challenge.enums.CustomerStatus;
+import com.abdullah.coding.challenge.enums.VehicleType;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalDouble;
+import java.util.UUID;
 
 @Service
 public class RidesServices {
@@ -18,44 +27,126 @@ public class RidesServices {
     @Autowired
     private BookingRepository bookingRepository;
 
+    @Autowired
     private RatingRepository ratingRepository;
-    public void BookedBooking(){
 
+    @Autowired
+    private CabRepository cabRepository;
+
+    @Autowired
+    private CustomerRepository customerRepository;
+
+    public Booking addBooking(Booking booking) {
+        UUID uuid = UUID.randomUUID();
+        Optional<Customer> optionalCustomer = customerRepository.findById(booking.getCustomer().getId());
+
+        if (optionalCustomer.isPresent() && optionalCustomer.get().getStatus().equals(CustomerStatus.ACTIVE)) {
+            Booking newBooking = new Booking();
+            newBooking.setCustomer(booking.getCustomer());
+            newBooking.setStatus(BookingStatus.REQUESTED.name());
+            newBooking.setCreationTime(Timestamp.valueOf(LocalDateTime.now()));
+            newBooking.setRequestTime(booking.getRequestTime());
+
+            try {
+                VehicleType vehicleType = VehicleType.valueOf(booking.getVehicalType());
+                newBooking.setVehicalType(vehicleType.name());
+            } catch (IllegalArgumentException e) {
+                e.printStackTrace();
+                return null;
+            }
+
+            newBooking.setBookingCode(uuid.toString());
+            return bookingRepository.save(newBooking);
+        } else {
+            return null;
+        }
     }
 
-    public List<Booking> seeFutureRides(Integer customerId){
+    public Booking updateBooking(Booking booking) {
+        Optional<Booking> optionalRide = Optional.ofNullable(bookingRepository.findByBookingCode(booking.getBookingCode()));
+
+        if (!optionalRide.isPresent()) {
+            return null;
+        }
+
+        Booking ride = optionalRide.get();
+        boolean updated = false;
+
+        if (booking.getRequestTime() != null && !booking.getRequestTime().equals(ride.getRequestTime())) {
+            ride.setRequestTime(booking.getRequestTime());
+            updated = true;
+        }
+
+        try {
+            VehicleType newVehicleType = VehicleType.valueOf(booking.getVehicalType());
+            if (!newVehicleType.equals(VehicleType.valueOf(ride.getVehicalType()))) {
+                ride.setVehicalType(booking.getVehicalType());
+                updated = true;
+            }
+        } catch (IllegalArgumentException e) {
+            e.printStackTrace();
+            return null;
+        }
+
+        if (updated) {
+            return bookingRepository.save(ride);
+        } else {
+            return ride;
+        }
+    }
+
+    public Booking cancelBooking(Booking booking) {
+        Optional<Booking> ride = Optional.ofNullable(bookingRepository.findByBookingCode(booking.getBookingCode()));
+
+        booking.setStatus(String.valueOf(BookingStatus.CANCELLED));
+
+        if (ride.isPresent()) {
+            bookingRepository.save(booking);
+        }
+        return booking;
+    }
+
+
+    public List<Booking> seeFutureRides(Integer customerId) {
         LocalDateTime timestamp = LocalDateTime.now();
-        List<Booking> futureRides =  bookingRepository.findAllWithCreationTimeInTheFuture(timestamp, customerId);
+        List<Booking> futureRides = bookingRepository.findAllWithCreationTimeInTheFuture(timestamp, customerId);
         return futureRides;
     }
 
 
-    public List<Booking> seePastRides(Integer customerId){
+    public List<Booking> seePastRides(Integer customerId) {
         LocalDateTime timestamp = LocalDateTime.now();
-        List<Booking> pastRides =  bookingRepository.findAllWithCreationTimeInThePast(timestamp, customerId);
+        List<Booking> pastRides = bookingRepository.findAllWithCreationTimeInThePast(timestamp, customerId);
         return pastRides;
     }
 
-    public Optional<Booking> getBookingInfo(String bookingCode){
+    public Optional<Booking> getBookingInfo(String bookingCode) {
         Optional<Booking> rideInfo = Optional.ofNullable(bookingRepository.findByBookingCode(bookingCode));
         return rideInfo;
     }
 
+    public Cab addRating(Rating rating) {
+        Cab savedRec = null;
 
-    public Rating addRating(Rating rating){
-
-        Rating rat = ratingRepository.save(rating);
-
-
-
-
-
-
-
-
-
-
-//        Optional<Booking> pastRides = Optional.ofNullable(bookingRepository.findByBookingCode(bookingCode));
-        return new Rating();
+        try {
+            ratingRepository.save(rating);
+            double averageRating = calculateAverageRating(rating.getCabId());
+            Cab cab = cabRepository.findById(rating.getId()).orElseThrow(() -> new RuntimeException("Cab not found"));
+            cab.setRating(averageRating);
+            savedRec = cabRepository.save(cab);
+        } catch (Exception exp) {
+            exp.printStackTrace();
+            return new Cab();
+        }
+        return savedRec;
     }
+
+
+    public double calculateAverageRating(Integer cabId) {
+        List<Integer> ratings = ratingRepository.findRatingsByCabId(cabId);
+        OptionalDouble average = ratings.stream().mapToInt(r -> r).average();
+        return average.isPresent() ? average.getAsDouble() : 0.0;
+    }
+
+
 }
