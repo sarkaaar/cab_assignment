@@ -8,7 +8,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
-import java.util.Optional;
 
 @RestController
 @CrossOrigin(origins = "*")
@@ -19,13 +18,23 @@ public class Bookings {
     private RidesServices rideService;
 
     @PostMapping("/bookRide")
-    public Booking bookRide(@RequestBody Booking ride) {
-        return rideService.addBooking(ride);
+    public ResponseEntity<Booking> bookRide(@RequestBody Booking ride) {
+        Booking rideInfo = rideService.addBooking(ride);
+
+        if (rideService.addBooking(ride).equals(null))
+            return new ResponseEntity<>(rideInfo, HttpStatus.BAD_REQUEST);
+        else
+            return new ResponseEntity<>(rideInfo, HttpStatus.OK);
+//        return rideService.addBooking(ride);
     }
 
     @PostMapping("/updateRide")
-    public Booking updateRide(@RequestBody Booking ride) {
-        return rideService.updateBooking(ride);
+    public ResponseEntity<Booking> updateRide(@RequestBody Booking ride) {
+        Booking rideInfo = rideService.updateBooking(ride);
+        if (rideService.addBooking(ride).equals(null))
+            return new ResponseEntity<>(rideInfo, HttpStatus.BAD_REQUEST);
+        else
+            return new ResponseEntity<>(rideInfo, HttpStatus.OK);
     }
 
     @PostMapping("/cancelRide")
@@ -53,9 +62,9 @@ public class Bookings {
     }
 
     @GetMapping("/getBookingInfo")
-    public ResponseEntity<Optional<Booking>> getBookingInfo(@RequestBody Booking ride) {
-        Optional<Booking> bookingInfo = rideService.getBookingInfo(ride.getBookingCode());
-        if (bookingInfo.isEmpty())
+    public ResponseEntity<Booking> getBookingInfo(@RequestBody Booking ride) {
+        Booking bookingInfo = rideService.getBookingInfo(ride.getBookingCode());
+        if (bookingInfo == null )
             return new ResponseEntity<>(bookingInfo, HttpStatus.NOT_FOUND);
         else
             return new ResponseEntity<>(bookingInfo, HttpStatus.OK);
@@ -63,8 +72,7 @@ public class Bookings {
 
     @PostMapping("/addRating")
     public Cab addRating(@RequestBody Rating rating) {
-        Cab addRating = rideService.addRating(rating);
-        return addRating;
+        return rideService.addRating(rating);
     }
 
     @GetMapping
@@ -74,5 +82,11 @@ public class Bookings {
             return new ResponseEntity<>(bookings, HttpStatus.NOT_FOUND);
         else
             return new ResponseEntity<>(bookings, HttpStatus.OK);    }
+
+    @PutMapping("/{bookingId}/assignCab/{cabId}")
+    public ResponseEntity<Booking> assignCabToBooking(@PathVariable Integer bookingId, @PathVariable Integer cabId) {
+        Booking updatedBooking = rideService.assignCabToBooking(bookingId, cabId);
+        return ResponseEntity.ok(updatedBooking);
+    }
 
 }

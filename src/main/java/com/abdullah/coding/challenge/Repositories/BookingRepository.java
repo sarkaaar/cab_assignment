@@ -17,13 +17,13 @@ public interface BookingRepository extends CrudRepository<Booking, Integer> {
 
     @Query("SELECT b.id, b.bookingCode, b.creationTime, b.status, b.vehicalType, b.cab.id FROM Booking b INNER JOIN Customer c ON b.customer.id  = c.id " +
             "WHERE b.creationTime > :currentDateTime AND c.id = :id ORDER BY b.creationTime ASC")
-    List<Booking> findAllWithCreationTimeInTheFuture(@Param("currentDateTime") LocalDateTime currentDateTime, @Param("id") Integer id);
+    List<Booking> findAllUpcommingRides(@Param("currentDateTime") LocalDateTime currentDateTime, @Param("id") Integer id);
 
     @Query("SELECT b.id, b.bookingCode, b.creationTime, b.status, b.vehicalType, b.cab.id FROM Booking b INNER JOIN Customer c ON b.customer.id  = c.id " +
             "WHERE b.creationTime < :currentDateTime AND c.id = :id ORDER BY b.creationTime ASC")
-    List<Booking> findAllWithCreationTimeInThePast(@Param("currentDateTime") LocalDateTime currentDateTime, @Param("id") Integer id);
+    List<Booking> findAllPastRides(@Param("currentDateTime") LocalDateTime currentDateTime, @Param("id") Integer id);
 
-    @Query("SELECT b FROM Booking b WHERE  (:customerName IS NULL OR b.customer.name LIKE %:customerName%) AND  (:vehicleType IS NULL " +
-            "OR b.vehicalType = :vehicleType) AND (:requestTime IS NULL OR b.requestTime = :requestTime)")
+    @Query("SELECT b FROM Booking b WHERE  (:customerName IS NULL OR b.customer.name LIKE %:customerName%) OR  (:vehicleType IS NULL " +
+            "OR b.vehicalType = :vehicleType) OR (:requestTime IS NULL OR b.requestTime = :requestTime)")
     List<Booking> findBookings(@Param("customerName") String customerName, @Param("vehicleType") String vehicleType, @Param("requestTime") LocalDateTime requestTime);
 }

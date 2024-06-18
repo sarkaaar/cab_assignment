@@ -1,11 +1,9 @@
 package com.abdullah.coding.challenge.Services;
 
 import com.abdullah.coding.challenge.Repositories.*;
+import com.abdullah.coding.challenge.Utils.Utils;
 import com.abdullah.coding.challenge.entities.*;
-import com.abdullah.coding.challenge.enums.BookingStatus;
-import com.abdullah.coding.challenge.enums.CustomerStatus;
-import com.abdullah.coding.challenge.enums.UserStatus;
-import com.abdullah.coding.challenge.enums.VehicleType;
+import com.abdullah.coding.challenge.enums.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -38,22 +36,27 @@ public class RidesServices {
         UUID uuid = UUID.randomUUID();
         Optional<Customer> optionalCustomer = customerRepository.findById(booking.getCustomer().getId());
 
-        if (optionalCustomer.isPresent() && optionalCustomer.get().getStatus().equals(CustomerStatus.ACTIVE)) {
+        if (optionalCustomer.isPresent() && optionalCustomer.get().getStatus().equals(CustomerStatus.ACTIVE.name())) {
+            Customer managedCustomer = optionalCustomer.get();
             Booking newBooking = new Booking();
-            newBooking.setCustomer(booking.getCustomer());
-            newBooking.setStatus(BookingStatus.REQUESTED.name());
-            newBooking.setCreationTime(Timestamp.valueOf(LocalDateTime.now()));
-            newBooking.setRequestTime(booking.getRequestTime());
 
             try {
+                newBooking.setCustomer(managedCustomer);
+                newBooking.setStatus(BookingStatus.REQUESTED.name());
+                newBooking.setCreationTime(Timestamp.valueOf(LocalDateTime.now()));
+                if (Utils.validateFutureTimeStamp(booking.getRequestTime())) {
+                    newBooking.setRequestTime(booking.getRequestTime());
+                } else {
+                    return null;
+                }
+
+                newBooking.setBookingCode(uuid.toString());
                 VehicleType vehicleType = VehicleType.valueOf(booking.getVehicalType());
                 newBooking.setVehicalType(vehicleType.name());
             } catch (IllegalArgumentException e) {
                 e.printStackTrace();
                 return null;
             }
-
-            newBooking.setBookingCode(uuid.toString());
             return bookingRepository.save(newBooking);
         } else {
             return null;
@@ -63,29 +66,34 @@ public class RidesServices {
     public Booking updateBooking(Booking booking) {
         Optional<Booking> optionalRide = Optional.ofNullable(bookingRepository.findByBookingCode(booking.getBookingCode()));
 
-        if (!optionalRide.isPresent()) {
+        if (optionalRide.isEmpty()) {
             return null;
         }
 
         Booking ride = optionalRide.get();
         boolean updated = false;
 
-        if (booking.getRequestTime() != null && !booking.getRequestTime().equals(ride.getRequestTime())) {
-            ride.setRequestTime(booking.getRequestTime());
-            updated = true;
-        }
+        if (BookingStatus.valueOf(ride.getStatus()).name().equals(BookingStatus.REQUESTED.name()) || BookingStatus.valueOf(ride.getStatus()).name().equals(BookingStatus.ASSIGNED.name())) {
 
-        try {
-            VehicleType newVehicleType = VehicleType.valueOf(booking.getVehicalType());
-            if (!newVehicleType.equals(VehicleType.valueOf(ride.getVehicalType()))) {
-                ride.setVehicalType(booking.getVehicalType());
-                updated = true;
+            try {
+                String newVehicleType = VehicleType.valueOf(booking.getVehicalType()).name();
+
+                if (Utils.validateFutureTimeStamp(booking.getRequestTime()) && !booking.getRequestTime().equals(ride.getRequestTime())) {
+                    ride.setRequestTime(booking.getRequestTime());
+                    ride.setStatus(BookingStatus.REQUESTED.name());
+                    updated = true;
+                }
+
+                if (!newVehicleType.equals(VehicleType.valueOf(ride.getVehicalType()).name())) {
+                    ride.setVehicalType(booking.getVehicalType());
+                    ride.setStatus(BookingStatus.REQUESTED.name());
+                    updated = true;
+                }
+            } catch (IllegalArgumentException e) {
+                e.printStackTrace();
+                return null;
             }
-        } catch (IllegalArgumentException e) {
-            e.printStackTrace();
-            return null;
         }
-
         if (updated) {
             return bookingRepository.save(ride);
         } else {
@@ -100,7 +108,7 @@ public class RidesServices {
     public Booking cancelBooking(Cancellation canceled) {
         Optional<Booking> optionalBooking = Optional.ofNullable(bookingRepository.findByBookingCode(canceled.getBookingCode()));
 
-        if (!optionalBooking.isPresent()) {
+        if (optionalBooking.isEmpty()) {
             return null;
         }
 
@@ -130,24 +138,22 @@ public class RidesServices {
 
     public List<Booking> seeFutureRides(Integer customerId) {
         LocalDateTime timestamp = LocalDateTime.now();
-        List<Booking> futureRides = bookingRepository.findAllWithCreationTimeInTheFuture(timestamp, customerId);
-        return futureRides;
+        return bookingRepository.findAllUpcommingRides(timestamp, customerId);
     }
 
 
     public List<Booking> seePastRides(Integer customerId) {
         LocalDateTime timestamp = LocalDateTime.now();
-        List<Booking> pastRides = bookingRepository.findAllWithCreationTimeInThePast(timestamp, customerId);
-        return pastRides;
+        return bookingRepository.findAllPastRides(timestamp, customerId);
     }
 
-    public Optional<Booking> getBookingInfo(String bookingCode) {
+    public Booking getBookingInfo(String bookingCode) {
         Optional<Booking> rideInfo = Optional.ofNullable(bookingRepository.findByBookingCode(bookingCode));
-        return rideInfo;
+        return rideInfo.orElse(null);
     }
 
     public Cab addRating(Rating rating) {
-        Cab savedRec = null;
+        Cab savedRec;
 
         try {
             ratingRepository.save(rating);
@@ -166,5 +172,27 @@ public class RidesServices {
         List<Integer> ratings = ratingRepository.findRatingsByCabId(cabId);
         OptionalDouble average = ratings.stream().mapToInt(r -> r).average();
         return average.isPresent() ? average.getAsDouble() : 0.0;
+    }
+
+    public Booking assignCabToBooking(Integer bookingId, Integer cabId) {
+        Optional<Booking> booking = bookingRepository.findById(bookingId);
+        Optional<Cab> cab = cabRepository.findById(cabId);
+
+        try {
+            if ((booking.isEmpty() || !booking.get().getStatus().equals(BookingStatus.ASSIGNED.name()))
+                    && CustomerStatus.valueOf(booking.get().getCustomer().getStatus()).name().equals(CustomerStatus.INACTIVE.name())) {
+                return null;
+            }
+
+            if (cab.isEmpty() || !cab.get().getStatus().equals(CabStatus.AVAILABLE.name())) {
+                return null;
+            }
+        } catch (Exception exp) {
+            exp.printStackTrace();
+            return null;
+        }
+
+        booking.get().setCab(cab.get());
+        return bookingRepository.save(booking.get());
     }
 }
